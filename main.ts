@@ -20,6 +20,7 @@ interface ThumbySettings {
 	imageFolder: string;
 	responsiveCardStyle: boolean;
 	youtubeApiKey: string;
+	embedOnPaste: boolean;
 }
 
 const DEFAULT_SETTINGS: Partial<ThumbySettings> = {
@@ -28,7 +29,8 @@ const DEFAULT_SETTINGS: Partial<ThumbySettings> = {
 	imageLocation: 'defaultAttachment',
 	imageFolder: '',
 	responsiveCardStyle: true,
-	youtubeApiKey: ''
+	youtubeApiKey: '',
+	embedOnPaste: true
 };
 
 const URL_TYPES = {
@@ -259,6 +261,58 @@ export default class ThumbyPlugin extends Plugin {
 				editor.replaceSelection(`[${info.title}](${info.url})`);
 			},
 		});
+
+		this.registerEvent(
+			this.app.workspace.on(
+				"editor-paste",
+				async (evt: ClipboardEvent, editor: Editor) => {
+					if (!this.settings.embedOnPaste || evt.defaultPrevented) return;
+
+					const clipText = evt.clipboardData?.getData("text/plain").trim() ?? "";
+					// Only intercept when the clipboard is a single video URL
+					if (!clipText || /\s/.test(clipText) || !this.isVideoUrl(clipText)) return;
+					// Leave Obsidian's paste-URL-over-selection link behavior alone,
+					// and don't nest a vid block inside another code block
+					if (editor.somethingSelected() || this.cursorInCodeBlock(editor)) return;
+
+					// preventDefault must be called synchronously, before any await
+					evt.preventDefault();
+
+					const id = await this.getVideoId(clipText);
+					if (id === "") {
+						// Couldn't resolve a video (e.g. unknown Vimeo URL), paste as normal text
+						editor.replaceSelection(clipText);
+						return;
+					}
+
+					// A code fence only renders at the start of a line
+					const cursor = editor.getCursor();
+					const line = editor.getLine(cursor.line);
+					const before = line.slice(0, cursor.ch).trim() ? "\n" : "";
+					const after = line.slice(cursor.ch).trim() ? "\n" : "";
+					editor.replaceSelection(`${before}\`\`\`vid\n${clipText}\n\`\`\`${after}`);
+				}
+			)
+		);
+	}
+
+	// isVideoUrl synchronously checks if a URL matches a supported video URL type
+	isVideoUrl(url: string): boolean {
+		return [...URL_TYPES.youtube, ...URL_TYPES.vimeo].some(
+			(type) => url.includes(type.match) && type.idPattern.test(url)
+		);
+	}
+
+	// cursorInCodeBlock checks if the cursor is inside a fenced code block
+	cursorInCodeBlock(editor: Editor): boolean {
+		const cursorLine = editor.getCursor().line;
+		let inBlock = false;
+		for (let i = 0; i < cursorLine; i++) {
+			if (/^\s*(```|~~~)/.test(editor.getLine(i))) {
+				inBlock = !inBlock;
+			}
+		}
+		return inBlock;
 	}
 
 	onunload() {

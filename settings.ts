@@ -106,6 +106,17 @@ export default class ThumbySettingTab extends PluginSettingTab {
 					})
 			);
 		new Setting(containerEl)
+			.setName('Insert Thumbnail on Paste')
+			.setDesc('Automatically insert a thumbnail when pasting a YouTube or Vimeo link')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.embedOnPaste)
+					.onChange(async (value) => {
+						this.plugin.settings.embedOnPaste = value;
+						await this.plugin.saveSettings();
+					})
+			);
+		new Setting(containerEl)
 			.setName('YouTube API Key (optional)')
 			.setDesc('An API Key for the YouTube Data API')
 			.addExtraButton((btn) =>
